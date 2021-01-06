@@ -1,261 +1,211 @@
 #!/usr/bin/python3 -u
+# coding: utf8
 from tango import AttrWriteType, DevState, DispLevel
 from tango.server import Device, attribute, command, device_property
 
-import instruments as ik
+import pyvisa
 from enum import IntEnum
 
 
-class Mode(IntEnum):
-    manual = 0
-    auto = 1
-    single = 2
-    repeat = 3
-    external = 4
+class MeasurementType(IntEnum):
+    VoltDC = 0
+    VoltAC = 1
+    CurrDC = 2
+    CurrAC = 3
 
 
-class TriggerMode(IntEnum):
-    internal = 0
-    external = 1
+class KeithleyDMM7510(Device):
+    '''KeithleyDMM7510
 
-
-class ExTriggerMode(IntEnum):
-    shutter = 0
-    controller = 1
-
-
-class BaudRate(IntEnum):
-    _9600 = 0
-    _115200 = 1
-
-
-class ThorlabsSC10(Device):
-    '''ThorlabsSC10
-
-    This controls the Thorlabs SC10 shutter controller
+    This controls the Keithley DMM7510 digital multimeter
 
     '''
 
-    Port = device_property(dtype=str, default_value='/dev/ttyUSB0')
-    Baudrate = device_property(dtype=int, default_value=9600)
-    Timeout = device_property(dtype=float, default_value=1)
+    Resource = device_property(dtype=str, default_value='TCPIP::192.168.1.201::inst0::INSTR')
+
+    measurement_type = attribute(
+        dtype=MeasurementType,
+        label='Measurement Type',
+        access=AttrWriteType.READ_WRITE,
+        display_level=DispLevel.OPERATOR,
+        doc='Sets the measurement type.'
+    )
     
-    # device attributes
-    enabled = attribute(
-        dtype='bool',
-        label='Enabled',
+    range = attribute(
+        dtype=float,
+        label='Range',
+        access=AttrWriteType.READ_WRITE,
+        display_level=DispLevel.OPERATOR,
+        format='%6.3e',
+        doc='Range according to measurement type. Device automatically selects nearest range.'
+    )
+    
+    trigger_status = attribute(
+        dtype=str,
+        label='Trigger Status',
         access=AttrWriteType.READ,
-        display_level=DispLevel.OPERATOR,
-        doc='Returns "0" if the shutter is disabled and "1" if enabled',
+        display_level=DispLevel.OPERATOR
     )
     
-    open = attribute(
-        dtype='bool',
-        label='Open',
+    last_value = attribute(
+        dtype=float,
+        format='%12.9f',
+        label='Value',
         access=AttrWriteType.READ,
-        display_level=DispLevel.OPERATOR,
-        doc='Returns "1" if the shutter is open or "0" if cloesed.',
+        display_level=DispLevel.OPERATOR
     )
     
-    interlock = attribute(
-        dtype='bool',
-        label='Interlock',
+    stats_average = attribute(
+        dtype=float,
+        format='%9:6e',
+        label='Stats Average',
         access=AttrWriteType.READ,
-        display_level=DispLevel.OPERATOR,
-        doc='Returns "1" if interlock is tripped, otherwise "0".'
+        display_level=DispLevel.OPERATOR
     )
     
-    repeat_count = attribute(
-        dtype='int',
-        label='Repeat Count',
-        access=AttrWriteType.READ_WRITE,
-        display_level=DispLevel.OPERATOR,
-        min_value=1,
-        max_value=99,
-        doc='Repeat count for repeat mode. The value nmust be from 1 to 99.'
+    stats_peak2peak = attribute(
+        dtype=float,
+        format='%9:6e',
+        label='Stats Peak2Peak',
+        access=AttrWriteType.READ,
+        display_level=DispLevel.OPERATOR
     )
     
-    baudrate = attribute(
-        dtype=BaudRate,
-        label='Baud Rate',
-        access=AttrWriteType.READ_WRITE,
-        display_level=DispLevel.EXPERT,
-        doc='Either 9600 or 115200'
+    stats_std = attribute(
+        dtype=float,
+        format='%9:6e',
+        label='Stats STD',
+        access=AttrWriteType.READ,
+        display_level=DispLevel.OPERATOR
     )
-
-    mode = attribute(
-        dtype=Mode,
-        label='Mode',
-        access=AttrWriteType.READ_WRITE,
-        display_level=DispLevel.OPERATOR,
-        doc='''The operating mode values:
-mode=1: Sets the unit to Manual Mode
-mode=2: Sets the unit to Auto Mode
-mode=3: Sets the unit to Single Mode
-mode=4: Sets the unit to Repeat Mode
-mode=5: Sets the unit to the External Gate Mode
-'''
+    
+    stats_span = attribute(
+        dtype=float,
+        format='%d',
+        label='Stats Span',
+        access=AttrWriteType.READ,
+        display_level=DispLevel.OPERATOR
     )
-        
-    trigger_mode = attribute(
-        dtype=TriggerMode,
-        label='Trigger Mode',
-        access=AttrWriteType.READ_WRITE,
-        display_level=DispLevel.OPERATOR,
-        doc='''The trigger mode (see section 4.1.4 for more details)
-trig=0: Internal trigger mode
-trig=1: External trigger mode
-'''
+    
+    stats_min = attribute(
+        dtype=float,
+        format='%9:6e',
+        label='Stats Min',
+        access=AttrWriteType.READ,
+        display_level=DispLevel.OPERATOR
     )
-
-    extrigger_mode = attribute(
-        dtype=ExTriggerMode,
-        label='Ex-Trigger Mode',
-        access=AttrWriteType.READ_WRITE,
-        display_level=DispLevel.OPERATOR,
-        doc='''The ex-trigger mode
-xto=0: Trigger Out TTL follows shutter output.
-xto=1: Trigger Out TTL follows controller output. 
-'''
-    )
-
-    open_duration = attribute(
-        dtype='int',
-        format='%6d',
-        label='Open Duration',
-        access=AttrWriteType.READ_WRITE,
-        display_level=DispLevel.OPERATOR,
-        min_value=0,
-        max_value=999999,
-        unit='ms',
-        doc='The shutter open time.'
-    )
-
-    close_duration = attribute(
-        dtype='int',
-        format='%6d',
-        label='Close Duration',
-        access=AttrWriteType.READ_WRITE,
-        display_level=DispLevel.OPERATOR,
-        min_value=0,
-        max_value=999999,
-        unit='ms',
-        doc='The shutter close time.'
+    
+    stats_max = attribute(
+        dtype=float,
+        format='%9:6e',
+        label='Stats Max',
+        access=AttrWriteType.READ,
+        display_level=DispLevel.OPERATOR
     )
 
     def init_device(self):
-        Device.init_device(self)
-        self.__enabled = False
-        self.__open = False
-        self.__interlock = False
-        self.info_stream('Connecting to serial port {:s} with baudrate {:d} ...'.format(self.Port, self.Baudrate))
+        super().init_device()
+        self.info_stream('Connecting to resource {:s} ...'.format(self.Resource))
         try:
-            self.sc = ik.thorlabs.SC10.open_serial(self.Port, self.Baudrate, timeout=self.Timeout)
-            self.sc.prompt = '> '
-            name = self.sc.query('id?')
-            self.info_stream('Connection established: {:s}'.format(name))
+            rm = pyvisa.ResourceManager()
+            self.dmm = rm.open_resource(self.Resource)
+            self.dmm.read_termination = '\n'
+            
+            idn = self.dmm.query('*IDN?')
+            self.info_stream('Connection established: {:s}'.format(idn))
             self.set_state(DevState.ON)
         except:
             self.error_stream('Cannot connect!')
             self.set_state(DevState.OFF)
-            
+
+        self.__sense_prefix = ''
+        self.__set_sense_prefix(self.read_measurement_type())
             
     def delete_device(self):
         self.set_state(DevState.OFF)
-        del self.sc
+        del self.dmm
         self.info_stream('Device was deleted!')
-
-    def always_executed_hook(self):
-        self.__enabled = bool(int(self.sc.query('ens?')))
-        self.__open = not bool(int(self.sc.query('closed?')))
-        self.__interlock = bool(int(self.sc.query('interlock?')))
-        if self.__open:
-            self.set_status('Device is OPEN')
-            self.set_state(DevState.OPEN)
-            return DevState.OPEN
+        
+    def read_measurement_type(self):
+        meas_type = self.dmm.query('SENS:FUNC?').strip('\"')
+        if meas_type == 'VOLT:DC':
+            return 0
+        elif meas_type == 'VOLT:AC':
+            return 1
+        elif meas_type == 'CURR:DC':
+            return 2
+        elif meas_type == 'CURR:AC':
+            return 3
         else:
-            self.set_status('Device is CLOSED')
-            self.set_state(DevState.CLOSE)
+            return -1
 
-    def read_enabled(self):
-        return self.__enabled
-
-    def read_open(self):
-        return self.__open
-
-    def read_interlock(self):
-        return self.__interlock
-
-    def read_baudrate(self):
-        return BaudRate._115200 if bool(int(self.sc.query('baud?'))) else BaudRate._9600
-
-    def write_baudrate(self, value):
-        self.sc.sendcmd('baud={:d}'.format(value))
-
-    def read_mode(self):
-        return int(self.sc.query('mode?'))-1
-
-    def write_mode(self, value):
-        self.sc.sendcmd('mode={:d}'.format(value+1))
-
-    def read_trigger_mode(self):
-        return int(self.sc.query('trig?'))
-
-    def write_trigger_mode(self, value):
-        self.sc.sendcmd('trig={:d}'.format(value))
+    def write_measurement_type(self, value):        
+        if value == 0:
+            cmd = 'VOLT:DC'
+        elif value == 1:
+            cmd = 'VOLT:AC'
+        elif value == 2:
+            cmd = 'CURR:DC'
+        elif value == 3:
+            cmd = 'CURR:AC'
         
-    def read_extrigger_mode(self):
-        return int(self.sc.query('xto?'))
+        self.dmm.write(':SENS:FUNC "{:s}"'.format(cmd))
+        self.__set_sense_prefix(value)
 
-    def write_extrigger_mode(self, value):
-        self.sc.sendcmd('xto={:d}'.format(value))
+    def read_range(self):
+        return float(self.dmm.query('SENS:{:s}:RANG?'.format(self.__sense_prefix)))
+
+    def write_range(self, value):
+        self.dmm.write('SENS:{:s}:RANG {:f}'.format(self.__sense_prefix, value))
+
+    def read_trigger_status(self):
+        return self.dmm.query(':TRIG:STAT?').split(';')[0]
+
+    def read_last_value(self):
+        return float(self.dmm.query(':FETC?'))
+
+    def read_stats_average(self):
+        return float(self.dmm.query(':TRAC:STAT:AVER?'))
+
+    def read_stats_peak2peak(self):
+        return float(self.dmm.query(':TRAC:STAT:PK2P?'))
+
+    def read_stats_std(self):
+        return float(self.dmm.query(':TRAC:STAT:STDD?'))
+
+    def read_stats_span(self):
+        return float(self.dmm.query(':TRAC:ACT?'))
+
+    def read_stats_min(self):
+        return float(self.dmm.query(':TRAC:STAT:MIN?'))
+
+    def read_stats_max(self):
+        return float(self.dmm.query(':TRAC:STAT:MAX?'))
+
+
+    @command
+    def clear_stats(self):
+        self.dmm.write(':TRAC:STAT:CLE')
         
-    def read_repeat_count(self):
-        return int(self.sc.query('rep?'))
+    @command
+    def read(self):
+        self.__last_value = float(self.dmm.query(':READ?'))
 
-    def write_repeat_count(self, value):
-        self.sc.sendcmd('rep={:d}'.format(value))
+    @command(dtype_in=float, doc_in="duration")
+    def trigger_duration(self, duration):
+        self.dmm.write('TRIG:LOAD "DurationLoop", {:f}, 0'.format(duration))
+        self.dmm.write('INIT')
 
-    def read_open_duration(self):
-        return int(self.sc.query('open?'))
-
-    def write_open_duration(self, value):
-        self.sc.sendcmd('open={:d}'.format(value))
-
-    def read_close_duration(self):
-        return int(self.sc.query('shut?'))
-
-    def write_close_duration(self, value):
-        self.sc.sendcmd('shut={:d}'.format(value))
-
-
-    @command()
-    def enable(self):
-        if self.__enabled:
-            self.debug_stream('shutter already enabled')
-        else:
-            self.debug_stream('enable shutter')
-            self.sc.sendcmd('ens')
-
-    @command()
-    def disable(self):
-        if self.__enabled:
-            self.debug_stream('disable shutter')
-            self.sc.sendcmd('ens')
-        else:
-            self.debug_stream('shutter already disabled')
-        
-    @command(doc_in='Store config (ex. mode, open time, closed time) into EEPROM.')
-    def store_config(self):
-        self.debug_stream('store config')
-        self.sc.sendcmd('savp')
-        
-    @command(doc_in='Load config from EEPROM.')    
-    def restore_config(self):
-        self.debug_stream('load config')
-        self.sc.sendcmd('resp')
-        
+    def __set_sense_prefix(self, value):
+        if value == 0:
+            self.__sense_prefix = 'VOLT'
+        elif value == 1:
+            self.__sense_prefix = 'VOLT'
+        elif value == 2:
+            self.__sense_prefix = 'CURR'
+        elif value == 3:
+            self.__sense_prefix = 'CURR'
         
 # start the server
 if __name__ == "__main__":
-    ThorlabsSC10.run_server()
+    KeithleyDMM7510.run_server()
