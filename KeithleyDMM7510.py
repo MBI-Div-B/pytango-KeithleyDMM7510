@@ -183,11 +183,18 @@ class KeithleyDMM7510(Device):
     def read_stats_max(self):
         return float(self.dmm.query(':TRAC:STAT:MAX?'))
 
+    @command
+    def trigger_abort(self):
+        self.dmm.write(':TRIG:ABOR')
 
     @command
     def clear_stats(self):
         self.dmm.write(':TRAC:STAT:CLE')
-        
+
+    @command
+    def clear_trace(self):
+        self.dmm.write(':TRAC:CLE')        
+      
     @command
     def read(self):
         self.__last_value = float(self.dmm.query(':READ?'))
