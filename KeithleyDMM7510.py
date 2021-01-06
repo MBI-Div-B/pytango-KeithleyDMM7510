@@ -120,6 +120,7 @@ class KeithleyDMM7510(Device):
 
         self.__sense_prefix = ''
         self.__set_sense_prefix(self.read_measurement_type())
+        self.read()
             
     def delete_device(self):
         self.set_state(DevState.OFF)
