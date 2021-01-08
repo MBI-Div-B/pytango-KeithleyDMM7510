@@ -12,6 +12,8 @@ class MeasurementType(IntEnum):
     VoltAC = 1
     CurrDC = 2
     CurrAC = 3
+    DigVolt = 4
+    DigCurr = 5
 
 
 class KeithleyDMM7510(Device):
@@ -22,6 +24,7 @@ class KeithleyDMM7510(Device):
     '''
 
     Resource = device_property(dtype=str, default_value='TCPIP::192.168.1.201::inst0::INSTR')
+    DigitizerCounts = device_property(dtype=int, default_value=15)
 
     measurement_type = attribute(
         dtype=MeasurementType,
@@ -38,6 +41,14 @@ class KeithleyDMM7510(Device):
         display_level=DispLevel.OPERATOR,
         format='%6.3e',
         doc='Range according to measurement type. Device automatically selects nearest range.'
+    )
+    
+    auto_range = attribute(
+        dtype='bool',
+        label='Auto Range',
+        access=AttrWriteType.READ_WRITE,
+        display_level=DispLevel.OPERATOR,
+        doc='Enable/Disable auto range.'
     )
     
     trigger_status = attribute(
@@ -120,7 +131,6 @@ class KeithleyDMM7510(Device):
 
         self.__sense_prefix = ''
         self.__set_sense_prefix(self.read_measurement_type())
-        self.read()
             
     def delete_device(self):
         self.set_state(DevState.OFF)
@@ -137,27 +147,56 @@ class KeithleyDMM7510(Device):
             return 2
         elif meas_type == 'CURR:AC':
             return 3
+        elif meas_type == 'NONE':
+            digi_type = self.dmm.query('SENS:DIG:FUNC?').strip('\"')
+            if digi_type == 'VOLT':
+                return 4
+            elif digi_type == 'CURR':
+                return 5
+            else:
+                return -1
         else:
             return -1
 
     def write_measurement_type(self, value):        
         if value == 0:
-            cmd = 'VOLT:DC'
+            self.dmm.write(':SENS:FUNC "VOLT:DC"')
         elif value == 1:
-            cmd = 'VOLT:AC'
+            self.dmm.write(':SENS:FUNC "VOLT:AC"')
         elif value == 2:
-            cmd = 'CURR:DC'
+            self.dmm.write(':SENS:FUNC "CURR:DC"')
         elif value == 3:
-            cmd = 'CURR:AC'
+            self.dmm.write(':SENS:FUNC "CURR:AC"')
+        elif value == 4:
+                self.dmm.write(':SENS:DIG:FUNC "VOLT"')
+        elif value == 5:
+                self.dmm.write(':SENS:DIG:FUNC "CURR"')
         
-        self.dmm.write(':SENS:FUNC "{:s}"'.format(cmd))
         self.__set_sense_prefix(value)
 
     def read_range(self):
-        return float(self.dmm.query('SENS:{:s}:RANG?'.format(self.__sense_prefix)))
+        if self.__sense_prefix == 'DIG':
+            return -1
+        else:
+            return float(self.dmm.query('SENS:{:s}:RANG?'.format(self.__sense_prefix)))
 
     def write_range(self, value):
-        self.dmm.write('SENS:{:s}:RANG {:f}'.format(self.__sense_prefix, value))
+        if self.__sense_prefix == 'DIG':
+            return
+        else:
+            self.dmm.write('SENS:{:s}:RANG {:f}'.format(self.__sense_prefix, value))
+
+    def read_auto_range(self):
+        if self.__sense_prefix == 'DIG':
+            return
+        else:
+            return int(self.dmm.query('SENS:{:s}:RANG:AUTO?'.format(self.__sense_prefix)))
+
+    def write_auto_range(self, value):
+        if self.__sense_prefix == 'DIG':
+            return
+        else:
+            self.dmm.write('SENS:{:s}:RANG:AUTO {:d}'.format(self.__sense_prefix, int(value)))
 
     def read_trigger_status(self):
         return self.dmm.query(':TRIG:STAT?').split(';')[0]
@@ -200,8 +239,21 @@ class KeithleyDMM7510(Device):
         self.__last_value = float(self.dmm.query(':READ?'))
 
     @command(dtype_in=float, doc_in="duration")
-    def trigger_duration(self, duration):
+    def trigger_duration_loop(self, duration):
         self.dmm.write('TRIG:LOAD "DurationLoop", {:f}, 0'.format(duration))
+        
+    @command(dtype_in=int, doc_in="counts")
+    def trigger_external(self, counts):
+        self.dmm.write(':TRIG:LOAD "EMPTY"')
+        self.dmm.write(':TRIG:BLOC:BUFF:CLEAR 1')
+        self.dmm.write(':TRIGger:BLOCk:WAIT 2, EXT, ENT')
+        self.dmm.write(':TRIG:EXT:IN:EDGE RIS')
+        self.dmm.write(':TRIG:BLOC:DEL:CONS 3, 0')
+        self.dmm.write(':TRIG:BLOC:DIGITIZE 4, "defbuffer1", {:d}'.format(self.DigitizerCounts)) 
+        self.dmm.write(':TRIG:BLOC:BRAN:COUN 5, {:d}, 2'.format(counts))
+        
+    @command
+    def trigger_init(self):
         self.dmm.write('INIT')
 
     def __set_sense_prefix(self, value):
@@ -213,6 +265,8 @@ class KeithleyDMM7510(Device):
             self.__sense_prefix = 'CURR'
         elif value == 3:
             self.__sense_prefix = 'CURR'
+        else:
+            self.__sense_prefix = 'DIG'
         
 # start the server
 if __name__ == "__main__":
