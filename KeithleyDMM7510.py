@@ -202,6 +202,8 @@ class KeithleyDMM7510(Device):
         return self.dmm.query(':TRIG:STAT?').split(';')[0]
 
     def read_last_value(self):
+        if self.__sense_prefix in ["VOLT", "CURR"]:
+            self.read()
         return float(self.dmm.query(':FETC?'))
 
     def read_stats_average(self):
