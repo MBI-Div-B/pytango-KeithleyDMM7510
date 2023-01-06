@@ -251,10 +251,14 @@ class KeithleyDMM7510(Device):
         self.dmm.write(':TRIG:BLOC:DEL:CONS 3, 0')
         self.dmm.write(':TRIG:BLOC:DIGITIZE 4, "defbuffer1", {:d}'.format(self.DigitizerCounts)) 
         self.dmm.write(':TRIG:BLOC:BRAN:COUN 5, {:d}, 2'.format(counts))
-        
+
     @command
     def trigger_init(self):
         self.dmm.write('INIT')
+
+    @command
+    def continuous(self):
+        self.dmm.write('TRIG:CONT REST')
 
     def __set_sense_prefix(self, value):
         if value == 0:
