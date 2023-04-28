@@ -1,5 +1,10 @@
-#!/usr/bin/python3 -u
-# coding: utf8
+#!/usr/bin/env python3
+# -*- coding: utf-8 -*-
+
+
+# Copyright (C) 2020  MBI-Division-B
+# MIT License, refer to LICENSE file
+
 from tango import AttrWriteType, DevState, DispLevel
 from tango.server import Device, attribute, command, device_property
 
@@ -168,9 +173,9 @@ class KeithleyDMM7510(Device):
         elif value == 3:
             self.dmm.write(':SENS:FUNC "CURR:AC"')
         elif value == 4:
-                self.dmm.write(':SENS:DIG:FUNC "VOLT"')
+            self.dmm.write(':SENS:DIG:FUNC "VOLT"')
         elif value == 5:
-                self.dmm.write(':SENS:DIG:FUNC "CURR"')
+            self.dmm.write(':SENS:DIG:FUNC "CURR"')
         
         self.__set_sense_prefix(value)
 
@@ -273,7 +278,8 @@ class KeithleyDMM7510(Device):
             self.__sense_prefix = 'CURR'
         else:
             self.__sense_prefix = 'DIG'
-        
+
+
 # start the server
 if __name__ == "__main__":
     KeithleyDMM7510.run_server()
