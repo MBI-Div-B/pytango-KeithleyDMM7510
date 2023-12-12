@@ -26,10 +26,17 @@ class KeithleyDMM7510(Device):
     Resource = device_property(
         dtype=str, default_value="TCPIP::192.168.1.201::inst0::INSTR"
     )
-    DigitizerCounts = device_property(dtype=int, default_value=15)
 
     measurement_type = attribute(
-        dtype=MeasurementType,
+        dtype="DevEnum",
+        enum_labels=[
+            "VoltDC",
+            "VoltAC",
+            "CurrDC",
+            "CurrAC",
+            "DigVolt",
+            "DigCurr"
+            ],
         label="Measurement Type",
         access=AttrWriteType.READ_WRITE,
         display_level=DispLevel.OPERATOR,
@@ -52,6 +59,16 @@ class KeithleyDMM7510(Device):
         display_level=DispLevel.OPERATOR,
         doc="Enable/Disable auto range.",
     )
+
+    digitizer_counts = attribute(
+        dtype=int,
+        label="Digitizer Counts",
+        memorized=True,
+        hw_memorized=True,
+        access=AttrWriteType.READ_WRITE,
+        display_level=DispLevel.OPERATOR,
+        doc="Nb of digitizer counts per trigger.",
+        )
 
     trigger_status = attribute(
         dtype=str,
@@ -204,6 +221,12 @@ class KeithleyDMM7510(Device):
                 "SENS:{:s}:RANG:AUTO {:d}".format(self.__sense_prefix, int(value))
             )
 
+    def read_digitizer_counts(self):
+        return self._digitizer_counts
+    
+    def write_digitizer_counts(self, value):
+        self._digitizer_counts = int(value)
+    
     def read_trigger_status(self):
         return self.dmm.query(":TRIG:STAT?").split(";")[0]
 
@@ -258,7 +281,7 @@ class KeithleyDMM7510(Device):
         self.dmm.write(":TRIG:EXT:IN:EDGE RIS")
         self.dmm.write(":TRIG:BLOC:DEL:CONS 3, 0")
         self.dmm.write(
-            ':TRIG:BLOC:DIGITIZE 4, "defbuffer1", {:d}'.format(self.DigitizerCounts)
+            ':TRIG:BLOC:DIGITIZE 4, "defbuffer1", {:d}'.format(self._digitizer_counts)
         )
         self.dmm.write(":TRIG:BLOC:BRAN:COUN 5, {:d}, 2".format(counts))
 
